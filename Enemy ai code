@@ -1,0 +1,242 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.SceneManagement;
+
+public class enemyAI : MonoBehaviour
+{
+    [Header("AI References")]
+    public NavMeshAgent ai;
+    public Animator aiAnim;
+    public Transform player;
+
+    [Header("Hızlar")]
+    public float walkSpeed, chaseSpeed;
+
+    [Header("Idle Süreleri")]
+    public float minIdleTime, maxIdleTime;
+
+    [Header("Mesafeler")]
+    public float detectionDistance, catchDistance, searchDistance;
+
+    [Header("Chase/Search Süreleri")]
+    public float minChaseTime, maxChaseTime;
+    public float minSearchTime, maxSearchTime;
+
+    [Header("Jumpscare")]
+    public float jumpscareTime;
+    public string deathScene;
+
+    [Header("UI Referansları")]
+    public GameObject hideText, stopHideText;
+
+    [Header("Sesler")]
+    public AudioClip walkClip;
+    public AudioClip runClip;
+    public AudioClip jumpscareClip;
+
+    private AudioSource audioSource;
+
+    [Header("Asansör Bağlantısı")]
+    public bool asansoreBindi = false;
+    public int hedefKat;
+    public DurmaKapıEtiketleyici durmaKod;
+    [System.Serializable]
+    public class Waypoint
+    {
+        public Transform point;
+        public float waitTime = 2f;
+
+        [Header("Opsiyonel Animasyon")]
+        public Animator extraAnimator;
+        public string triggerName;
+
+        [Header("Opsiyonel Rotasyon")]
+        public bool kullanOzelRotasyon = false;  // ✅ BURAYA EKLENECEK
+        public Vector3 ozelRotasyon;             // ✅ BURAYA EKLENECEK
+    }
+
+    [System.Serializable]
+    public class KatWaypointleri
+    {
+        public string katIsmi;
+        public List<Waypoint> waypointler = new List<Waypoint>();
+
+        [Header("Kat Bekleme Süresi (saniye)")]
+        public float katBeklemeSuresi = 10f;
+    }
+
+    [Header("Katlara Göre Waypointler")]
+    public List<KatWaypointleri> katlar = new List<KatWaypointleri>();
+
+    private Waypoint currentWaypoint;
+    public bool walking, chasing, searching;
+    public bool hasJumpscared = false;
+
+    public Vector3 rayCastOffset;
+    private Vector3 dest;
+    private float aiDistance;
+
+    private float orjinalDetectionDistance;
+    private float orjinalCatchDistance;
+    private float orjinalSearchDistance;
+    private float orjinalChaseSpeed;
+
+    private int currentKatIndex = 0;
+    private float katTimer;
+
+    void Awake()
+    {
+        // 🔸 NavMeshAgent kontrolü      
+        if (ai == null)
+        {
+            ai = GetComponent<NavMeshAgent>();
+            if (ai == null)
+            {
+                ai = gameObject.AddComponent<NavMeshAgent>();
+                Debug.LogWarning($"{name} nesnesine otomatik NavMeshAgent eklendi!");
+            }
+            else
+            {
+                Debug.Log($"{name} nesnesindeki mevcut NavMeshAgent otomatik atandı.");
+            }
+        }
+
+        // 🔸 Animator kontrolü      
+        if (aiAnim == null)
+        {
+            aiAnim = GetComponent<Animator>();
+            if (aiAnim == null)
+            {
+                aiAnim = GetComponentInChildren<Animator>();
+                if (aiAnim != null)
+                {
+                    Debug.Log($"{name} nesnesinin alt objesinden Animator otomatik atandı.");
+                }
+                else
+                {
+                    Debug.LogWarning($"{name} nesnesinde Animator bulunamadı! Lütfen ekleyin.");
+                }
+            }
+            else
+            {
+                Debug.Log($"{name} nesnesindeki mevcut Animator otomatik atandı.");
+            }
+        }
+
+        // 🔸 AudioSource kontrolü      
+        audioSource = GetComponent<AudioSource>();
+        if (audioSource == null)
+        {
+            audioSource = gameObject.AddComponent<AudioSource>();
+            audioSource.loop = false;
+            audioSource.playOnAwake = false;
+            Debug.Log($"{name} nesnesine otomatik AudioSource eklendi.");
+        }
+
+        // 🎧 AudioSource ayarları — 🔹 BU KISIM YENİ EKLENDİ  
+        audioSource.spatialBlend = 1f; // 3D ses  
+        audioSource.maxDistance = 10f; // Maksimum duyulma mesafesi  
+        audioSource.rolloffMode = AudioRolloffMode.Linear; // Sesin azalım tipi  
+    }
+
+    void Start()
+    {
+        walking = true;
+        audioSource.loop = true;
+
+        if (katlar.Count > 0)
+        {
+            katTimer = katlar[currentKatIndex].katBeklemeSuresi;
+            SelectNextWaypoint();
+        }
+
+        orjinalDetectionDistance = detectionDistance;
+        orjinalCatchDistance = catchDistance;
+        orjinalSearchDistance = searchDistance;
+        orjinalChaseSpeed = chaseSpeed;
+    }
+
+    void Update()
+    {
+        if (hasJumpscared) return;
+        if (player == null || ai == null || !ai.isOnNavMesh) return;
+
+        Vector3 direction = (player.position - transform.position).normalized;
+        RaycastHit hit;
+        aiDistance = Vector3.Distance(player.position, transform.position);
+
+        // Oyuncuyu görme
+        if (Physics.Raycast(transform.position + rayCastOffset, direction, out hit, detectionDistance))
+        {
+            if (hit.collider.CompareTag("Player"))
+            {
+                walking = false;
+                StopAllCoroutines();
+                StartCoroutine(searchRoutine());
+                searching = true;
+            }
+        }
+
+        // Arama
+        if (searching)
+        {
+            ai.speed = 0;
+            ResetAnim();
+            aiAnim.SetTrigger("search");
+
+            if (aiDistance <= searchDistance)
+            {
+                StopAllCoroutines();
+                StartCoroutine(chaseRoutine());
+                chasing = true;
+                searching = false;
+            }
+        }
+
+        // Kovalamaca
+        if (chasing)
+        {
+            if (!ai.isOnNavMesh) return;
+
+            dest = player.position;
+            ai.SetDestination(dest);
+            ai.speed = chaseSpeed;
+
+            ResetAnim();
+            aiAnim.SetTrigger("sprint");
+            PlayLoop(runClip);
+
+            if (aiDistance <= catchDistance && !hasJumpscared)
+            {
+                hasJumpscared = true;
+                PlayerMovement pm = player.GetComponent<PlayerMovement>();
+                if (pm != null) pm.enabled = false;
+
+                ai.isStopped = true;
+                ai.ResetPath();
+
+                hideText.SetActive(false);
+                stopHideText.SetActive(false);
+
+                ResetAnim();
+                aiAnim.SetTrigger("jumpscare");
+                PlayOnce(jumpscareClip);
+
+                StartCoroutine(FaceEachOther());
+                StartCoroutine(deathRoutine());
+
+                chasing = false;
+            }
+        }
+
+        // Kat süresi kontrolü
+        if (walking && katlar.Count > 0)
+        {
+            katTimer -= Time.deltaTime;
+            if (katTimer <= 0f)
+            {
+                currentKatIndex = (currentKatIndex + 1) % katlar.Cou...
+
+<...etc...>
