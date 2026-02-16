@@ -1,0 +1,210 @@
+using System.Collections;
+using UnityEngine;
+
+public class ElevatorController : MonoBehaviour
+{
+    [System.Serializable]
+    public class ElevatorPoint
+    {
+        public GameObject buton;                   // Tıklanacak buton (Prefab)
+        public Transform hedefKonum;               // Gidilecek konum
+        public bool ozelButon;                     // NPC sadece bunlara tıklayabilir
+        public GameObject otomatikTiklanacakButon; // Eğer atanırsa → bu buton da otomatik çalışır
+        public FlagKod kontrolDosyasi;              // Sadece AI için flag, hareketi etkilemez
+    }
+
+    [Header("Asansör Ayarları")]
+    [SerializeField] private GameObject asansor;
+    [SerializeField] private float hareketHizi = 1f;
+    [SerializeField] private ElevatorPoint[] noktalar;
+
+    [Header("Ses Ayarları")]
+    public AudioSource hareketSesi;
+    public AudioSource durmaSesi;
+
+    [Header("Debug / NPC Kontrol")]
+    public bool npcButonaTiklandi = false;
+    public bool isMoving = false;
+
+    [Header("Buton Kilidi")]
+    public float durduktanSonraKilitSuresi = 3f;
+    private bool butonKilidi = false;
+
+    private bool fizikselHareketBaslasin = false;
+    private int hedefIndex = -1;
+    private bool sesCaldi = false;
+    private Camera mainCam;
+
+    void Start()
+    {
+        mainCam = Camera.main;
+        StartCoroutine(NPCButonKontrolRoutine());
+    }
+
+    void Update()
+    {
+        RaycastKontrol();
+
+        if (isMoving && hedefIndex >= 0 && fizikselHareketBaslasin)
+        {
+            ElevatorPoint point = noktalar[hedefIndex];
+
+            if (hareketSesi != null && !hareketSesi.isPlaying && !sesCaldi)
+            {
+                hareketSesi.loop = true;
+                hareketSesi.Play();
+                sesCaldi = true;
+            }
+
+            Vector3 hedefPozisyon = point.hedefKonum.position;
+            asansor.transform.position = Vector3.MoveTowards(
+                asansor.transform.position,
+                hedefPozisyon,
+                hareketHizi * Time.deltaTime
+            );
+
+            if (Vector3.Distance(asansor.transform.position, hedefPozisyon) < 0.01f)
+            {
+                StartCoroutine(HareketiBitir());
+            }
+        }
+    }
+
+    /// <summary>
+    /// Oyuncu raycast ile tüm butonlara tıklayabilir.
+    /// </summary>
+    void RaycastKontrol()
+    {
+        if (butonKilidi) return; // 🔒 Kilitliyse tıklanamaz
+
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            Ray ray = new Ray(mainCam.transform.position, mainCam.transform.forward);
+            if (Physics.Raycast(ray, out RaycastHit hit, 1.7f))
+            {
+                GameObject hedefObje = hit.collider.gameObject;
+
+                for (int i = 0; i < noktalar.Length; i++)
+                {
+                    if (noktalar[i].buton == hedefObje)
+                    {
+                        ButonaBasildi(i);
+
+                        // Eğer otomatik buton atanmışsa → onu da çalıştır
+                        if (noktalar[i].otomatikTiklanacakButon != null)
+                        {
+                            for (int j = 0; j < noktalar.Length; j++)
+                            {
+                                if (noktalar[j].buton == noktalar[i].otomatikTiklanacakButon)
+                                {
+                                    ButonaBasildi(j);
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// NPC sadece özel butonlara (ozelButon = true) tıklayabilir.
+    /// </summary>
+    private IEnumerator NPCButonKontrolRoutine()
+    {
+        WaitForSeconds delay = new WaitForSeconds(0.2f);
+
+        while (true)
+        {
+            if (butonKilidi)
+            {
+                yield return delay;
+                continue;
+            }
+
+            foreach (var point in noktalar)
+            {
+                if (point.buton != null && point.ozelButon)
+                {
+                    Collider[] hits = Physics.OverlapSphere(point.buton.transform.position, 0.5f);
+                    foreach (Collider hit in hits)
+                    {
+                        if (hit.CompareTag("NPC"))
+                        {
+                            for (int i = 0; i < noktalar.Length; i++)
+                            {
+                                if (noktalar[i].buton == point.buton)
+                                {
+                                    ButonaBasildi(i);
+                                    StartCoroutine(NPCButonaTiklamaFlag());
+
+                                    // Eğer otomatik buton atanmışsa → onu da çalıştır
+                                    if (noktalar[i].otomatikTiklanacakButon != null)
+                                    {
+                                        for (int j = 0; j < noktalar.Length; j++)
+                                        {
+                                            if (noktalar[j].buton == noktalar[i].otomatikTiklanacakButon)
+                                            {
+                                                ButonaBasildi(j);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            yield return delay;
+        }
+    }
+
+    private void ButonaBasildi(int index)
+    {
+        if (butonKilidi) return; // 🔒 Ekstra güvenlik
+
+        hedefIndex = index;
+        isMoving = true;
+        sesCaldi = false;
+        StartCoroutine(FizikselHareketiBaslat());
+
+        // ✅ Sadece flag aç (hareketi etkilemez)
+        if (noktalar[index].kontrolDosyasi != null)
+            noktalar[index].kontrolDosyasi.aktifMi = true;
+    }
+
+    private IEnumerator FizikselHareketiBaslat()
+    {
+        yield return new WaitForSeconds(2f);
+        fizikselHareketBaslasin = true;
+    }
+
+    private IEnumerator HareketiBitir()
+    {
+        fizikselHareketBaslasin = false;
+
+        if (hareketSesi != null && hareketSesi.isPlaying)
+            hareketSesi.Stop();
+
+        if (durmaSesi != null)
+            durmaSesi.Play();
+
+        yield return new WaitForSeconds(2f);
+
+        // ✅ Hareket bittiğinde flag kapat
+        if (hedefIndex >= 0 && noktalar[hedefIndex].kontrolDosyasi != null)
+            noktalar[hedefIndex].kontrolDosyasi.aktifMi = false;
+
+        isMoving = false;
+        hedefIndex = -1;
+        sesCaldi = false;
+
+        // 🔒 Asansör durduktan sonra butonları kilitle
+        St...
+
+<...etc...>
