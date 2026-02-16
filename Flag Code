@@ -1,0 +1,60 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+
+public class FlagKod : MonoBehaviour
+{
+    [Header("Aktiflik Kontrolü")]
+    public bool aktifMi = false;
+
+    [Header("NPC Yakalama Ayarları")]
+    public float bindirmeMesafesi = 2f; // 2f içinde kontrol
+    public Transform asansorHedefi;     // NPC’nin yönlendirileceği asansörün içi
+
+    private List<enemyAI> npcList = new List<enemyAI>(); // NPC önbelleği
+    private bool islemYapildi = false; // aynı flag birden fazla çalışmasın diye
+
+    void Start()
+    {
+        // Sahnedeki tüm NPC’leri başta bulup cache’e al
+        GameObject[] npcs = GameObject.FindGameObjectsWithTag("Enemy");
+        foreach (GameObject npc in npcs)
+        {
+            enemyAI ai = npc.GetComponent<enemyAI>();
+            if (ai != null)
+                npcList.Add(ai);
+        }
+    }
+
+    void Update()
+    {
+        // Eğer flag kapalıysa veya işlem zaten yapıldıysa çık
+        if (!aktifMi || islemYapildi)
+            return;
+
+        // NPC listesinde döngü
+        foreach (enemyAI ai in npcList)
+        {
+            if (ai == null) continue; // NPC silinmişse atla
+
+            // Kare farkı hesaplanır (SqrMagnitude sqrt'tan hızlıdır)
+            if ((transform.position - ai.transform.position).sqrMagnitude <= bindirmeMesafesi * bindirmeMesafesi)
+            {
+                if (!ai.asansoreBindi)
+                {
+                    ai.asansoreBindi = true;
+                    ai.ai.isStopped = false;
+                    ai.ai.ResetPath();
+                    ai.ai.destination = asansorHedefi.position;
+
+                    ai.walking = false;
+                    ai.chasing = false;
+                    ai.searching = false;
+                }
+            }
+        }
+
+        // Bu flag sadece bir kere çalışsın, performans için
+        islemYapildi = true;
+    }
+}
