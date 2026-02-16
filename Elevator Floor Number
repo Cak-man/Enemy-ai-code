@@ -1,0 +1,78 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+public class DurmaKapıEtiketleyici : MonoBehaviour
+{
+    [System.Serializable]
+    public class SpawnElement
+    {
+        public int sayiDurumu;              // Bu sayı objenin ismiyle eşleşecek
+        public Transform spawnNoktasi;      // Prefab’ın spawn edileceği konum
+        public GameObject spawnEdilecek;    // Spawn edilecek prefab
+    }
+
+    public ElevatorController elevatorController;
+    public GameObject elevatorObject;
+
+    [Header("Durma Objeleri (her biri altında 1 kapı içermeli)")]
+    public GameObject[] durmaObjeleri;
+
+    [Header("Spawn Ayarları")]
+    public SpawnElement[] spawnElementleri;
+
+    private GameObject sonTemasEdilenDurmaObjesi = null;
+
+    // ✅ Yeni integer (varsayılan değer yok, hep güncellenecek)
+    public int asansorunDurduguKat;
+
+    // ✅ Hangi katlarda spawn yapıldığını takip eden liste
+    private HashSet<int> spawnEdilenKatlar = new HashSet<int>();
+
+
+    void OnCollisionStay(Collision collision)
+    {
+        if (elevatorController != null && !elevatorController.isMoving)
+        {
+            foreach (GameObject durmaObjesi in durmaObjeleri)
+            {
+                if (collision.gameObject == durmaObjesi)
+                {
+                    sonTemasEdilenDurmaObjesi = durmaObjesi;
+
+                    int katNumarasi;
+                    if (int.TryParse(durmaObjesi.name, out katNumarasi))
+                    {
+                        asansorunDurduguKat = katNumarasi;
+
+                        // ✅ Eğer bu katta daha önce spawn yapılmadıysa
+                        if (!spawnEdilenKatlar.Contains(katNumarasi))
+                        {
+                            spawnEdilenKatlar.Add(katNumarasi); // işaretle
+
+                            foreach (var element in spawnElementleri)
+                            {
+                                if (katNumarasi == element.sayiDurumu)
+                                {
+                                    Debug.Log("Katta ilk defa spawn yapıldı: " + katNumarasi);
+
+                                    if (element.spawnEdilecek != null && element.spawnNoktasi != null)
+                                    {
+                                        GameObject yeni = Instantiate(
+                                            element.spawnEdilecek,
+                                            element.spawnNoktasi.position,
+                                            element.spawnNoktasi.rotation,
+                                            durmaObjesi.transform
+                                        );
+                                        yeni.name = element.spawnEdilecek.name;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return;
+                }
+            }
+        }
+    }
+}
