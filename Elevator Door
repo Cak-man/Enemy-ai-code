@@ -1,0 +1,93 @@
+using UnityEngine;
+
+public class ObjectMover : MonoBehaviour
+{
+    public Transform targetObject; // Inspector’dan sürükle
+    public ElevatorController elevatorController; // ElevatorController atanacak
+
+    [Header("Ses Ayarları")]
+    public AudioSource hareketBaslangicAudioSource; // Başlangıç sesi oynatılacak kaynak
+    public AudioClip hareketBaslangicClip;          // Başlangıç sesi klibi
+
+    public AudioSource durmaAudioSource;            // Durma sesi oynatılacak kaynak
+    public AudioClip durmaClip;                     // Durma sesi klibi
+
+    private Vector3 targetPosition;
+    private bool hasMoved = false;
+    private bool lastIsMovingState;
+
+    public float moveDuration = 1f; // Kaç saniyede hareket etsin
+    private float moveTimer = 0f;
+    private bool isMovingToTarget = false;
+    private Vector3 startPosition;
+
+    void Start()
+    {
+        if (targetObject != null)
+            targetPosition = targetObject.position;
+
+        if (elevatorController != null)
+            lastIsMovingState = elevatorController.isMoving;
+    }
+
+    void Update()
+    {
+        if (elevatorController == null || targetObject == null)
+            return;
+
+        // isMoving durumu değiştiğinde tetikleme
+        if (elevatorController.isMoving != lastIsMovingState)
+        {
+            lastIsMovingState = elevatorController.isMoving;
+            hasMoved = false;
+
+            if (lastIsMovingState) // Hareket başladı
+            {
+                if (hareketBaslangicAudioSource != null && hareketBaslangicClip != null)
+                {
+                    hareketBaslangicAudioSource.PlayOneShot(hareketBaslangicClip);
+                }
+                else
+                {
+                    Debug.LogWarning("Hareket başlangıç sesi için AudioSource veya AudioClip atanmadı.");
+                }
+            }
+            else // Hareket bitti
+            {
+                if (durmaAudioSource != null && durmaClip != null)
+                {
+                    durmaAudioSource.PlayOneShot(durmaClip);
+                }
+                else
+                {
+                    Debug.LogWarning("Durma sesi için AudioSource veya AudioClip atanmadı.");
+                }
+            }
+        }
+
+        if (!hasMoved)
+        {
+            // Kapıyı yukarı (Y ekseni) hareket ettir
+            Vector3 direction = elevatorController.isMoving ? Vector3.up : Vector3.down;
+
+            startPosition = targetObject.position;
+            targetPosition = startPosition + direction * 2.5f; // Ne kadar yukarı/aşağı gideceği
+
+            moveTimer = 0f;
+            isMovingToTarget = true;
+            hasMoved = true;
+        }
+
+        if (isMovingToTarget)
+        {
+            moveTimer += Time.deltaTime;
+            float t = Mathf.Clamp01(moveTimer / moveDuration);
+            targetObject.position = Vector3.Lerp(startPosition, targetPosition, t);
+
+            if (t >= 1f)
+            {
+                isMovingToTarget = false;
+            }
+        }
+    }
+}
