@@ -1,0 +1,90 @@
+using UnityEditor;
+using UnityEngine;
+
+[CustomEditor(typeof(ElevatorController))]
+public class ElevatorControllerEditor : Editor
+{
+    private SerializedProperty asansor;
+    private SerializedProperty hareketHizi;
+    private SerializedProperty noktalar;
+    private SerializedProperty hareketSesi;
+    private SerializedProperty durmaSesi;
+    private SerializedProperty npcButonaTiklandi;
+    private SerializedProperty isMoving;
+
+    private void OnEnable()
+    {
+        asansor = serializedObject.FindProperty("asansor");
+        hareketHizi = serializedObject.FindProperty("hareketHizi");
+        noktalar = serializedObject.FindProperty("noktalar");
+        hareketSesi = serializedObject.FindProperty("hareketSesi");
+        durmaSesi = serializedObject.FindProperty("durmaSesi");
+        npcButonaTiklandi = serializedObject.FindProperty("npcButonaTiklandi");
+        isMoving = serializedObject.FindProperty("isMoving");
+    }
+
+    public override void OnInspectorGUI()
+    {
+        serializedObject.Update();
+
+        // Asansör ayarları
+        EditorGUILayout.LabelField("Asansör Ayarları", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(asansor);
+        EditorGUILayout.PropertyField(hareketHizi);
+
+        // Noktalar dizisi
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Noktalar", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("+ Nokta Ekle"))
+        {
+            noktalar.arraySize++;
+        }
+
+        for (int i = 0; i < noktalar.arraySize; i++)
+        {
+            var element = noktalar.GetArrayElementAtIndex(i);
+
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+
+            EditorGUILayout.LabelField($"Nokta {i + 1}", EditorStyles.boldLabel);
+            if (GUILayout.Button("−", GUILayout.Width(25)))
+            {
+                noktalar.DeleteArrayElementAtIndex(i);
+                break; // Silme sonrası döngüyü kırmak önemli (dizi değişti)
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.PropertyField(element.FindPropertyRelative("buton"));
+            EditorGUILayout.PropertyField(element.FindPropertyRelative("hedefKonum"));
+            EditorGUILayout.PropertyField(element.FindPropertyRelative("ozelButon"));
+
+            // Eğer özel buton seçiliyse, alt özellikleri göster
+            if (element.FindPropertyRelative("ozelButon").boolValue)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(element.FindPropertyRelative("otomatikTiklanacakButon"));
+                EditorGUILayout.PropertyField(element.FindPropertyRelative("kontrolDosyasi"));
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        // Ses ayarları
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Ses Ayarları", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(hareketSesi);
+        EditorGUILayout.PropertyField(durmaSesi);
+
+        // Debug / NPC Kontrol
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Debug / NPC Kontrol", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(npcButonaTiklandi);
+        EditorGUILayout.PropertyField(isMoving);
+
+        serializedObject.ApplyModifiedProperties();
+    }
+}
