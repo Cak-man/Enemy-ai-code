@@ -28,8 +28,7 @@ public class enemyAI : MonoBehaviour
     public float jumpscareTime;
     public string deathScene;
 
-    [Header("UI Referansları")]
-    public GameObject hideText, stopHideText;
+
 
     [Header("Sesler")]
     public AudioClip walkClip;
@@ -217,8 +216,6 @@ public class enemyAI : MonoBehaviour
                 ai.isStopped = true;
                 ai.ResetPath();
 
-                hideText.SetActive(false);
-                stopHideText.SetActive(false);
 
                 ResetAnim();
                 aiAnim.SetTrigger("jumpscare");
@@ -237,6 +234,188 @@ public class enemyAI : MonoBehaviour
             katTimer -= Time.deltaTime;
             if (katTimer <= 0f)
             {
-                currentKatIndex = (currentKatIndex + 1) % katlar.Cou...
+                currentKatIndex = (currentKatIndex + 1) % katlar.Count;
+                katTimer = katlar[currentKatIndex].katBeklemeSuresi;
+                SelectNextWaypoint();
+            }
+        }
+    }
 
-<...etc...>
+    void ResetAnim()
+    {
+        aiAnim.ResetTrigger("walk");
+        aiAnim.ResetTrigger("idle");
+        aiAnim.ResetTrigger("search");
+        aiAnim.ResetTrigger("sprint");
+        aiAnim.ResetTrigger("jumpscare");
+        aiAnim.ResetTrigger("kapiAc");
+        aiAnim.ResetTrigger("butonaBas");
+    }
+
+    void PlayLoop(AudioClip clip)
+    {
+        if (clip != null && (audioSource.clip != clip || !audioSource.isPlaying))
+        {
+            audioSource.clip = clip;
+            audioSource.loop = true;
+            audioSource.Play();
+        }
+    }
+
+    void PlayOnce(AudioClip clip)
+    {
+        if (clip != null)
+        {
+            audioSource.loop = false;
+            audioSource.clip = clip;
+            audioSource.Play();
+        }
+    }
+
+    void StopSound()
+    {
+        audioSource.Stop();
+        audioSource.clip = null;
+    }
+
+    void SelectNextWaypoint()
+    {
+        KatWaypointleri kat = katlar[currentKatIndex];
+        if (kat.waypointler.Count > 0)
+        {
+            currentWaypoint = kat.waypointler[Random.Range(0, kat.waypointler.Count)];
+            StartCoroutine(GoToWaypointRoutine(currentWaypoint));
+        }
+    }
+
+
+    IEnumerator GoToWaypointRoutine(Waypoint wp)
+    {
+        if (ai == null || !ai.isOnNavMesh) yield break;
+
+        walking = true;
+        ai.SetDestination(wp.point.position);
+        ai.speed = walkSpeed;
+
+        ResetAnim();
+        aiAnim.SetTrigger("walk");
+        PlayLoop(walkClip);
+
+        while (ai.pathPending || ai.remainingDistance > ai.stoppingDistance)
+        {
+            yield return null;
+        }
+
+        ResetAnim();
+        aiAnim.SetTrigger("idle");
+        StopSound();
+
+        // ✅ Waypoint rotasyon kontrolü
+        if (wp.kullanOzelRotasyon)
+        {
+            transform.rotation = Quaternion.Euler(wp.ozelRotasyon);
+        }
+        else
+        {
+            transform.rotation = wp.point.rotation;
+        }
+
+        // Opsiyonel animasyon
+        if (!string.IsNullOrEmpty(wp.triggerName))
+        {
+            if (wp.extraAnimator != null) wp.extraAnimator.SetTrigger(wp.triggerName);
+            else aiAnim.SetTrigger(wp.triggerName);
+        }
+
+        yield return new WaitForSeconds(wp.waitTime);
+
+        SelectNextWaypoint();
+    }
+    IEnumerator searchRoutine()
+    {
+        yield return new WaitForSeconds(Random.Range(minSearchTime, maxSearchTime));
+        searching = false;
+        SelectNextWaypoint();
+    }
+
+    IEnumerator chaseRoutine()
+    {
+        yield return new WaitForSeconds(Random.Range(minChaseTime, maxChaseTime));
+        chasing = false;
+        SelectNextWaypoint();
+    }
+
+    IEnumerator deathRoutine()
+    {
+        yield return new WaitForSeconds(jumpscareTime);
+        SceneManager.LoadScene(deathScene);
+    }
+
+    IEnumerator FaceEachOther()
+    {
+        float duration = 0.1f;
+        float elapsed = 0f;
+
+        Quaternion playerStartRot = player.rotation;
+        Quaternion enemyStartRot = transform.rotation;
+
+        Vector3 playerDir = transform.position - player.position;
+        Quaternion playerTargetRot = Quaternion.LookRotation(new Vector3(playerDir.x, 0, playerDir.z));
+
+        Vector3 enemyDir = player.position - transform.position;
+        Quaternion enemyTargetRot = Quaternion.LookRotation(new Vector3(enemyDir.x, 0, enemyDir.z));
+
+        while (elapsed < duration)
+        {
+            float t = elapsed / duration;
+            player.rotation = Quaternion.Slerp(playerStartRot, playerTargetRot, t);
+            transform.rotation = Quaternion.Slerp(enemyStartRot, enemyTargetRot, t);
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        player.rotation = playerTargetRot;
+        transform.rotation = enemyTargetRot;
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Door"))
+        {
+            ResetAnim();
+            aiAnim.SetTrigger("kapiAc");
+
+            Door door = other.GetComponentInChildren<Door>();
+            if (door != null)
+            {
+                door.open = true;
+            }
+        }
+
+        if (other.CompareTag("AsansörButon"))
+        {
+            if (Vector3.Distance(transform.position, other.transform.position) <= 0.5f)
+            {
+                ResetAnim();
+                aiAnim.SetTrigger("butonaBas");
+            }
+        }
+    }
+
+    public void PasifEt()
+    {
+        detectionDistance = 0f;
+        catchDistance = 0f;
+        searchDistance = 0f;
+        chaseSpeed = 0f;
+    }
+
+    public void AktifEt()
+    {
+        detectionDistance = orjinalDetectionDistance;
+        catchDistance = orjinalCatchDistance;
+        searchDistance = orjinalSearchDistance;
+        chaseSpeed = orjinalChaseSpeed;
+    }
+}
